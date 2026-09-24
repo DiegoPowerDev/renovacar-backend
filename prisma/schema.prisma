@@ -1,0 +1,190 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ======================
+// CLIENTES
+// ======================
+model Cliente {
+  id        String     @id @default(cuid())
+  nombre    String
+  dniRuc    String?    @unique
+  telefono  String?
+  whatsapp  String?
+  correo    String?
+  creadoEn  DateTime   @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  vehiculos Vehiculo[]
+}
+
+// ======================
+// VEHÍCULOS (Placa = identificador principal)
+// ======================
+model Vehiculo {
+  id        String   @id @default(cuid())
+  placa     String   @unique          // ← CLAVE PRINCIPAL DEL SISTEMA
+  marca     String
+  modelo    String
+  anio      Int?
+  color     String?
+  vin       String?
+  creadoEn  DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  clienteId String
+  cliente   Cliente  @relation(fields: [clienteId], references: [id])
+
+  ordenes   OrdenTrabajo[]
+}
+
+// ======================
+// ÓRDENES DE TRABAJO
+// ======================
+model OrdenTrabajo {
+  id              String   @id @default(cuid())
+  numero          String   @unique
+  fechaIngreso    DateTime @default(now())
+  fechaPrometida  DateTime?
+  estado          String   @default("BORRADOR")
+  observaciones   String?
+  kilometraje     Int?
+  nivelCombustible String?
+
+  // Cotización
+  estadoCotizacion String  @default("BORRADOR")
+  subtotal         Float   @default(0)
+  descuentoTotal   Float   @default(0)
+  total            Float   @default(0)
+
+  // Pagos (se calculan, pero los guardamos para rapidez)
+  totalPagado      Float   @default(0)
+  saldoPendiente   Float   @default(0)
+
+  creadoEn        DateTime @default(now())
+  actualizadoEn   DateTime @updatedAt
+
+  vehiculoId      String
+  vehiculo        Vehiculo @relation(fields: [vehiculoId], references: [id])
+
+  items           ItemCotizacion[]
+  pagos           Pago[]
+  etapas          EtapaProduccion[]
+
+  controlCalidad  ControlCalidad?
+  entrega         Entrega?
+
+}
+
+
+// ======================
+// CATÁLOGO DE SERVICIOS (opcional pero útil)
+// ======================
+model ServicioCatalogo {
+  id          String   @id @default(cuid())
+  nombre      String
+  descripcion String?
+  precioBase  Float    @default(0)
+  activo      Boolean  @default(true)
+  creadoEn    DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  items       ItemCotizacion[]
+}
+
+// ======================
+// ITEMS DE COTIZACIÓN (servicios dentro de una OT)
+// ======================
+model ItemCotizacion {
+  id              String   @id @default(cuid())
+  nombre          String
+  descripcion     String?
+  cantidad        Float    @default(1)
+  precioUnitario  Float
+  descuento       Float    @default(0)   // monto de descuento
+  subtotal        Float                 // (cantidad * precioUnitario) - descuento
+  creadoEn        DateTime @default(now())
+  actualizadoEn   DateTime @updatedAt
+
+  ordenId         String
+  orden           OrdenTrabajo @relation(fields: [ordenId], references: [id], onDelete: Cascade)
+
+  servicioCatalogoId String?
+  servicioCatalogo   ServicioCatalogo? @relation(fields: [servicioCatalogoId], references: [id])
+}
+
+// ======================
+// PAGOS
+// ======================
+model Pago {
+  id            String   @id @default(cuid())
+  monto         Float
+  metodo        String   // EFECTIVO | YAPE | PLIN | TRANSFERENCIA | TARJETA | OTRO
+  fecha         DateTime @default(now())
+  comprobante   String?
+  observaciones String?
+  registradoPor String?  // Luego lo conectaremos con el usuario logueado
+
+  creadoEn      DateTime @default(now())
+
+  ordenId       String
+  orden         OrdenTrabajo @relation(fields: [ordenId], references: [id], onDelete: Cascade)
+}
+
+
+// ======================
+// ETAPAS DE PRODUCCIÓN
+// ======================
+model EtapaProduccion {
+  id            String    @id @default(cuid())
+  nombre        String    // Ej: RECEPCIÓN, DESARMADO, PLANCHADO, PINTURA, etc.
+  secuencia         Int       // Para ordenar las etapas (1, 2, 3...)
+  estado        String    @default("PENDIENTE") // PENDIENTE | EN_PROCESO | PAUSADO | TERMINADO
+  responsable   String?   // Nombre o ID del trabajador
+  fechaInicio   DateTime?
+  fechaFin      DateTime?
+  observaciones String?
+  creadoEn      DateTime  @default(now())
+  actualizadoEn DateTime  @updatedAt
+
+  ordenId       String
+  orden         OrdenTrabajo @relation(fields: [ordenId], references: [id], onDelete: Cascade)
+}
+
+// ======================
+// CONTROL DE CALIDAD
+// ======================
+model ControlCalidad {
+  id            String    @id @default(cuid())
+  aprobado      Boolean   @default(false)
+  observaciones String?
+  inspector     String?   // quién revisó
+  fecha         DateTime  @default(now())
+  creadoEn      DateTime  @default(now())
+
+  ordenId       String    @unique
+  orden         OrdenTrabajo @relation(fields: [ordenId], references: [id], onDelete: Cascade)
+}
+
+// ======================
+// ENTREGA
+// ======================
+model Entrega {
+  id              String    @id @default(cuid())
+  fecha           DateTime  @default(now())
+  hora            String?
+  entregadoPor    String?   // trabajador de Renova
+  recibidoPor     String?   // nombre de quien retira
+  kilometraje     Int?
+  observaciones   String?
+  conformidad     Boolean   @default(false) // firma / conformidad del cliente
+  creadoEn        DateTime  @default(now())
+
+  ordenId         String    @unique
+  orden           OrdenTrabajo @relation(fields: [ordenId], references: [id], onDelete: Cascade)
+}
